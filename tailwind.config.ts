@@ -6,12 +6,11 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        lg: ".5625rem",
+        md: ".375rem",
+        sm: ".1875rem",
       },
       colors: {
-        // Flat / base colors (regular buttons)
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         border: "hsl(var(--border) / <alpha-value>)",
@@ -81,6 +80,16 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+        neon: {
+          green: "#00ff88",
+          red: "#ff3b5c",
+          amber: "#ffb800",
+          cyan: "#00d4ff",
+        },
+        slate: {
+          700: "#334155",
+          800: "#1e293b",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
@@ -96,10 +105,35 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "pulse-glow": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
+        "slide-in-left": {
+          from: { transform: "translateX(-20px)", opacity: "0" },
+          to: { transform: "translateX(0)", opacity: "1" },
+        },
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        "flash-in": {
+          "0%": { backgroundColor: "rgba(0,255,136,0.15)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+        "terminal-blink": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "slide-in-left": "slide-in-left 0.3s ease-out",
+        "fade-in": "fade-in 0.3s ease-out",
+        "flash-in": "flash-in 1s ease-out",
+        "terminal-blink": "terminal-blink 1s step-end infinite",
       },
     },
   },
