@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { Fish } from "lucide-react";
+import { LanguageSelector } from "@/components/language-selector";
 
-export function TopBar({ onDemoToggle }: { onDemoToggle?: () => void }) {
+interface TopBarProps {
+  onDemoToggle?: () => void;
+  currentLang: string;
+  onLangChange: (lang: string) => void;
+}
+
+export function TopBar({ onDemoToggle, currentLang, onLangChange }: TopBarProps) {
   const [time, setTime] = useState(getISTTime());
 
   useEffect(() => {
@@ -35,6 +42,7 @@ export function TopBar({ onDemoToggle }: { onDemoToggle?: () => void }) {
             DEMO
           </button>
         )}
+        <LanguageSelector currentLang={currentLang} onLangChange={onLangChange} />
         <span className="text-xs font-mono text-[#94a3b8]" data-testid="text-time">{time}</span>
       </div>
     </header>

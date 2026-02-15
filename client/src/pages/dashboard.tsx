@@ -36,6 +36,7 @@ export default function Dashboard() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [isAuctionLoading, setIsAuctionLoading] = useState(false);
+  const [currentLang, setCurrentLang] = useState("ml");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -207,7 +208,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-[#e2e8f0]">
       <div className="max-w-[1920px] mx-auto">
-        <TopBar onDemoToggle={handleDemo} />
+        <TopBar onDemoToggle={handleDemo} currentLang={currentLang} onLangChange={setCurrentLang} />
 
         <div className="hidden lg:grid grid-cols-12 gap-3 h-[calc(100vh-52px)] p-3">
           <div className="col-span-3 overflow-y-auto space-y-3 min-h-0">
