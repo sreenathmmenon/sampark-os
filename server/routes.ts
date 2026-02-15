@@ -858,10 +858,16 @@ _Powered by Sampark-OS_`;
   // Get current auction state (for buyers in separate browser)
   app.get("/api/current-auction", async (req: Request, res: Response) => {
     try {
+      // If there's a pending deal, state should be AWAITING_APPROVAL
+      let state = currentAuction?.state || "IDLE";
+      if (pendingDeal && state !== "DEAL_SECURED") {
+        state = "AWAITING_APPROVAL";
+      }
+
       res.json({
         catch_analysis: currentAuction?.catch_analysis || null,
         bids: liveAuctionBids,
-        state: currentAuction?.state || "IDLE",
+        state,
         pending_deal: pendingDeal,
       });
     } catch (error: any) {
