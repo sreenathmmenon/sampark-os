@@ -8,6 +8,7 @@ export function BuyerActions() {
   const [counterAmount, setCounterAmount] = useState("");
   const [showCounterInput, setShowCounterInput] = useState(false);
   const [isPlacingBid, setIsPlacingBid] = useState(false);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
 
   const catchAnalysis = auction.catch_analysis;
   const hasActiveDeal = auction.state === "DEAL_SECURED" || auction.deal_approved;
@@ -16,15 +17,35 @@ export function BuyerActions() {
     return null;
   }
 
-  const handleAccept = () => {
-    // In real implementation, this would send acceptance to the backend
-    console.log("Buyer accepted the deal");
+  const handleAccept = async () => {
+    try {
+      await apiRequest("POST", "/api/buyer-accept", {
+        buyer_id: "GGE",
+        buyer_name: "Great Global Exports",
+      });
+      setActionStatus("✅ Deal Accepted!");
+      setTimeout(() => setActionStatus(null), 3000);
+    } catch (error) {
+      console.error("Failed to accept deal:", error);
+      setActionStatus("❌ Failed to accept");
+      setTimeout(() => setActionStatus(null), 3000);
+    }
   };
 
-  const handleReject = () => {
-    // In real implementation, this would send rejection to the backend
-    console.log("Buyer rejected the deal");
-    setShowCounterInput(false);
+  const handleReject = async () => {
+    try {
+      await apiRequest("POST", "/api/buyer-reject", {
+        buyer_id: "GGE",
+        buyer_name: "Great Global Exports",
+      });
+      setActionStatus("🚫 Deal Rejected");
+      setTimeout(() => setActionStatus(null), 3000);
+      setShowCounterInput(false);
+    } catch (error) {
+      console.error("Failed to reject deal:", error);
+      setActionStatus("❌ Failed to reject");
+      setTimeout(() => setActionStatus(null), 3000);
+    }
   };
 
   const handleCounter = async () => {
@@ -41,7 +62,8 @@ export function BuyerActions() {
           buyer_name: "Great Global Exports",
           bid_amount: parseInt(counterAmount, 10),
         });
-        console.log("Bid placed successfully:", counterAmount);
+        setActionStatus("✅ Counter bid placed!");
+        setTimeout(() => setActionStatus(null), 3000);
         setCounterAmount("");
         setShowCounterInput(false);
       } catch (error) {
@@ -54,6 +76,11 @@ export function BuyerActions() {
 
   return (
     <div className="rounded-xl bg-[#1e293b]/60 backdrop-blur-sm border border-[#334155]/50 p-6">
+      {actionStatus && (
+        <div className="p-3 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-center">
+          <p className="text-sm font-semibold text-[#00ff88]">{actionStatus}</p>
+        </div>
+      )}
       <div className="flex flex-col gap-4">
         {/* Counter Input (if active) */}
         {showCounterInput && (

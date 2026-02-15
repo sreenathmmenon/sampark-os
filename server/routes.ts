@@ -233,6 +233,10 @@ _Powered by Sampark-OS | Matsya Edition_`;
         send({ type: "log", agent: "NEGOTIATOR", message: "⚠️ Telegram broadcast failed (auction continues)", timestamp: getISTTime() });
       }
 
+      // Initialize counters and maps
+      let bidCounter = 0;
+      const bidMap: Record<string, any> = {};
+
       // ✅ SEND EXISTING HUMAN BIDS (if any were placed before auction started)
       if (liveAuctionBids.length > 0) {
         send({ type: "log", agent: "SYSTEM", message: `📥 Loading ${liveAuctionBids.length} human bid(s) placed earlier`, timestamp: getISTTime() });
@@ -356,8 +360,6 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
         },
       ];
 
-      let bidCounter = 0;
-      const bidMap: Record<string, any> = {};
       let auctionComplete = false;
 
       // Time-based Auditor: Check deadline and auto-trigger liquidation
@@ -913,6 +915,34 @@ _Powered by Sampark-OS_`;
     } catch (error: any) {
       console.error("Place bid error:", error);
       res.status(500).json({ error: error.message || "Failed to place bid" });
+    }
+  });
+
+  // Buyer accepts the deal
+  app.post("/api/buyer-accept", async (req: Request, res: Response) => {
+    try {
+      const { buyer_id, buyer_name } = req.body;
+      console.log(`[BUYER ACCEPT] ${buyer_name} (${buyer_id}) accepted the deal`);
+
+      // In a full implementation, this would trigger deal confirmation
+      res.json({ success: true, message: "Deal accepted by buyer" });
+    } catch (error: any) {
+      console.error("Buyer accept error:", error);
+      res.status(500).json({ error: error.message || "Failed to accept" });
+    }
+  });
+
+  // Buyer rejects the deal
+  app.post("/api/buyer-reject", async (req: Request, res: Response) => {
+    try {
+      const { buyer_id, buyer_name } = req.body;
+      console.log(`[BUYER REJECT] ${buyer_name} (${buyer_id}) rejected the deal`);
+
+      // In a full implementation, this would continue negotiations
+      res.json({ success: true, message: "Deal rejected by buyer" });
+    } catch (error: any) {
+      console.error("Buyer reject error:", error);
+      res.status(500).json({ error: error.message || "Failed to reject" });
     }
   });
 
