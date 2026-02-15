@@ -344,14 +344,13 @@ SCENARIO: You have 5+ buyers interested from the Kerala network:
 - SCM (Saravana Canteen & Mess) - Telegram - Bulk hostel supply
 - VFS (Vypeen Fresh Stall) - Telegram - Local retail
 
-Simulate a realistic auction where:
-1. First check the mandi/market price for this species
-2. Receive bids from at least 4-5 buyers via WhatsApp and Telegram
-3. Reject at least one low bid with a counter-offer
-4. Evaluate each bid against the market price, deducting fuel costs
-5. Accept the best deal that maximizes net profit for the fisherman
+Simulate a FAST auction (finish within 30 seconds):
+1. Quickly check the mandi/market price for this species
+2. Receive bids from 3-4 buyers via WhatsApp and Telegram
+3. Evaluate bids against market price, deducting fuel costs
+4. Accept the best deal QUICKLY that maximizes net profit
 
-Use the tools provided to execute each step. Think through your reasoning carefully.
+Work FAST - fisherman needs quick turnaround. Once you have 3+ good bids, accept the best one immediately.
 Always prioritize the fisherman's net profit after fuel deduction.`;
 
       await sleep(1000);
