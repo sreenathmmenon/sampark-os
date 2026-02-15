@@ -3,6 +3,7 @@ import { TopBar } from "@/components/top-bar";
 import { CatchCard } from "@/components/catch-card";
 import { AuctionStatus } from "@/components/auction-status";
 import { BidFeed } from "@/components/bid-feed";
+import { BidChart } from "@/components/bid-chart";
 import { BidTable } from "@/components/bid-table";
 import { TransparencyTerminal } from "@/components/transparency-terminal";
 import { EconomicsBar } from "@/components/economics-bar";
@@ -11,7 +12,12 @@ import { QualityCertificate } from "@/components/quality-certificate";
 import { LogisticsCalculator } from "@/components/logistics-calculator";
 import { NegotiationTimeline } from "@/components/negotiation-timeline";
 import { FloatingActions } from "@/components/floating-actions";
-import { useAuctionSubscription } from "@/lib/auction-store";
+import { BuyerHeader } from "@/components/buyer-header";
+import { ActiveAuctionsFeed } from "@/components/active-auctions-feed";
+import { NegotiationChat } from "@/components/negotiation-chat";
+import { BuyerEconomics } from "@/components/buyer-economics";
+import { BuyerActions } from "@/components/buyer-actions";
+import { useAuctionSubscription, useViewMode } from "@/lib/auction-store";
 import {
   resetAuction,
   setAuctionState,
@@ -24,12 +30,14 @@ import {
   setCountdown,
   setActiveThreads,
   setDealApproved,
+  setDeadline,
 } from "@/lib/auction-store";
 import { runDemo, stopDemo } from "@/lib/demo-mode";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function Dashboard() {
   const auction = useAuctionSubscription();
+  const viewMode = useViewMode();
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -172,6 +180,9 @@ export default function Dashboard() {
       case "threads":
         setActiveThreads(event.count);
         break;
+      case "deadline":
+        setDeadline(event.timestamp);
+        break;
     }
   }, []);
 
@@ -210,8 +221,38 @@ export default function Dashboard() {
       <div className="max-w-[1920px] mx-auto">
         <TopBar onDemoToggle={handleDemo} currentLang={currentLang} onLangChange={setCurrentLang} />
 
-        <div className="hidden lg:grid grid-cols-12 gap-3 h-[calc(100vh-52px)] p-3">
-          <div className="col-span-3 overflow-y-auto space-y-3 min-h-0">
+        {/* Desktop Views */}
+        {viewMode === "buyer" ? (
+          <div className="hidden lg:grid grid-cols-12 gap-3 h-[calc(100vh-52px)] p-3">
+            {/* Buyer Header */}
+            <div className="col-span-12">
+              <BuyerHeader buyerId="GGE" />
+            </div>
+
+            {/* LEFT: Active Auctions Feed */}
+            <div className="col-span-3 overflow-y-auto min-h-0">
+              <ActiveAuctionsFeed />
+            </div>
+
+            {/* CENTER: Negotiation Chat */}
+            <div className="col-span-6 overflow-y-auto min-h-0">
+              <NegotiationChat />
+            </div>
+
+            {/* RIGHT: Buyer Economics */}
+            <div className="col-span-3 overflow-y-auto min-h-0">
+              <BuyerEconomics buyerId="GGE" />
+            </div>
+
+            {/* BOTTOM: Action Buttons */}
+            <div className="col-span-12">
+              <BuyerActions />
+            </div>
+          </div>
+        ) : (
+          /* Fisherman View (Original) */
+          <div className="hidden lg:grid grid-cols-12 gap-3 h-[calc(100vh-52px)] p-3">
+            <div className="col-span-3 overflow-y-auto space-y-3 min-h-0">
             <CatchCard
               analysis={auction.catch_analysis}
               isLoading={isAnalyzing}
@@ -256,6 +297,11 @@ export default function Dashboard() {
                 />
               </div>
             </div>
+
+            {/* Real-time bid price chart */}
+            {auction.bids.length > 0 && (
+              <BidChart bids={auction.bids} />
+            )}
           </div>
 
           <div className="col-span-3 overflow-y-auto min-h-0 flex flex-col gap-3">
@@ -295,7 +341,9 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        )}
 
+        {/* Mobile View - always shows fisherman view for now */}
         <div className="lg:hidden p-4 pb-44 space-y-4">
           <AuctionStatus state={auction.state} countdown={auction.countdown_seconds} />
           <CatchCard
@@ -307,6 +355,12 @@ export default function Dashboard() {
             photoUrl={photoUrl}
           />
           <BidFeed bids={auction.bids} isLoading={isAuctionLoading && auction.bids.length === 0} />
+
+          {/* Real-time bid price chart */}
+          {auction.bids.length > 0 && (
+            <BidChart bids={auction.bids} />
+          )}
+
           <TransparencyTerminal entries={auction.log_entries} isLoading={false} />
 
           <div className="fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-[#0a0f1a] via-[#0a0f1a] to-transparent pt-8">

@@ -1,4 +1,4 @@
-export type AuctionState = "IDLE" | "SCANNING" | "AUCTION_LIVE" | "DEAL_SECURED" | "LIQUIDATION";
+export type AuctionState = "IDLE" | "SCANNING" | "AUCTION_LIVE" | "AWAITING_APPROVAL" | "DEAL_SECURED" | "LIQUIDATION";
 
 export interface CatchAnalysis {
   species: string;
@@ -56,6 +56,7 @@ export interface AuctionData {
   risk_buffer: number;
   net_profit: number;
   deal_approved: boolean;
+  deadline_timestamp: number | null; // Unix timestamp for auction deadline (e.g., 3:30 PM)
 }
 
 export const INITIAL_AUCTION_DATA: AuctionData = {
@@ -72,4 +73,5 @@ export const INITIAL_AUCTION_DATA: AuctionData = {
   risk_buffer: 0,
   net_profit: 0,
   deal_approved: false,
+  deadline_timestamp: null,
 };

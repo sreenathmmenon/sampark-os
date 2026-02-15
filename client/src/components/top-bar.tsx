@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Fish } from "lucide-react";
+import { Fish, Store } from "lucide-react";
 import { LanguageSelector } from "@/components/language-selector";
+import { useViewMode, setViewMode } from "@/lib/auction-store";
 
 interface TopBarProps {
   onDemoToggle?: () => void;
@@ -10,6 +11,7 @@ interface TopBarProps {
 
 export function TopBar({ onDemoToggle, currentLang, onLangChange }: TopBarProps) {
   const [time, setTime] = useState(getISTTime());
+  const viewMode = useViewMode();
 
   useEffect(() => {
     const interval = setInterval(() => setTime(getISTTime()), 1000);
@@ -31,6 +33,33 @@ export function TopBar({ onDemoToggle, currentLang, onLangChange }: TopBarProps)
           <span className="text-[11px] text-[#94a3b8] font-mono">ONLINE</span>
         </div>
       </div>
+
+      {/* View Mode Toggle */}
+      <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-[#1e293b]/60 border border-[#334155]/50">
+        <button
+          onClick={() => setViewMode("fisherman")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            viewMode === "fisherman"
+              ? "bg-[#00ff88]/20 text-[#00ff88] border border-[#00ff88]/30"
+              : "text-[#94a3b8] hover:text-[#e2e8f0]"
+          }`}
+        >
+          <Fish className="w-3.5 h-3.5" />
+          <span>Fisherman</span>
+        </button>
+        <button
+          onClick={() => setViewMode("buyer")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            viewMode === "buyer"
+              ? "bg-[#00ff88]/20 text-[#00ff88] border border-[#00ff88]/30"
+              : "text-[#94a3b8] hover:text-[#e2e8f0]"
+          }`}
+        >
+          <Store className="w-3.5 h-3.5" />
+          <span>Buyer</span>
+        </button>
+      </div>
+
       <div className="flex items-center gap-3">
         {onDemoToggle && (
           <button

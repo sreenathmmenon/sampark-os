@@ -3,13 +3,50 @@ import { createServer, type Server } from "http";
 import Anthropic from "@anthropic-ai/sdk";
 import { randomBytes } from "crypto";
 import { HARBORS, BUYERS, findFishByName } from "../shared/marketData";
+import {
+  sendWhatsAppMessage,
+  sendTelegramMessage,
+  broadcastTelegramLiquidation,
+  broadcastTelegramChannel,
+  sendSMS,
+  parseWhatsAppIncoming,
+  parseTelegramIncoming,
+} from "./omnichannel";
+import {
+  transcribeVoice,
+  synthesizeVoice,
+  parseVoiceCommand,
+  generateMalayalamResponse,
+} from "./voice";
 
 const anthropic = new Anthropic({
-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  apiKey: process.env.ANTHROPIC_API_KEY || process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+  baseURL: process.env.ANTHROPIC_BASE_URL || process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
 });
 
 let currentAuction: any = null;
+
+// Global state for manual approval and human bids
+let pendingDeal: {
+  buyer_id: string;
+  buyer_name: string;
+  final_amount: number;
+  proposed_at: number;
+  timeout_seconds: number;
+} | null = null;
+
+let liveAuctionBids: Array<{
+  id: string;
+  buyer_name: string;
+  buyer_id: string;
+  bid_amount: number;
+  source: "HUMAN";
+  channel: "whatsapp" | "telegram" | "ui";
+  timestamp: string;
+  status: string;
+}> = [];
+
+let auctionSSEClients: Array<Response> = [];
 
 export async function registerRoutes(
   httpServer: Server,
@@ -22,11 +59,18 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No image provided" });
       }
 
-      const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
-      const mediaType = image.match(/^data:(image\/\w+);base64,/)?.[1] || "image/jpeg";
+      const base64Data = image
+        .replace(/^data:image\/\w+;base64,/, "")
+        .replace(/\s/g, ""); // Remove all whitespace including newlines
+
+      // Detect media type from base64 data (PNG starts with iVBORw0KGgo, JPEG with /9j/)
+      let mediaType = image.match(/^data:(image\/\w+);base64,/)?.[1];
+      if (!mediaType) {
+        mediaType = base64Data.startsWith('iVBOR') ? 'image/png' : 'image/jpeg';
+      }
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-5-20250514",
+        model: "claude-opus-4-6",
         max_tokens: 8192,
         messages: [
           {
@@ -104,9 +148,23 @@ Return ONLY valid JSON, no other text.`,
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
 
+      // Register this client for broadcasting
+      auctionSSEClients.push(res);
+
+      // Remove client on disconnect
+      req.on("close", () => {
+        const index = auctionSSEClients.indexOf(res);
+        if (index > -1) {
+          auctionSSEClients.splice(index, 1);
+        }
+        console.log(`[SSE] Client disconnected. Active clients: ${auctionSSEClients.length}`);
+      });
+
       const send = (data: any) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };
+
+      console.log(`[SSE] Client connected. Active clients: ${auctionSSEClients.length}`);
 
       const species = catch_analysis.species_local || catch_analysis.species;
       const weightKg = catch_analysis.weight_kg || 30;
@@ -116,6 +174,15 @@ Return ONLY valid JSON, no other text.`,
       send({ type: "state", state: "AUCTION_LIVE" });
       send({ type: "threads", count: 5 });
       send({ type: "countdown", seconds: 420 });
+
+      // Set deadline to 3:30 PM IST (Kadamakudy cold storage cutoff)
+      const deadline = new Date();
+      deadline.setHours(15, 30, 0, 0); // 3:30 PM
+      // If it's already past 3:30 PM today, set for tomorrow
+      if (deadline.getTime() < Date.now()) {
+        deadline.setDate(deadline.getDate() + 1);
+      }
+      send({ type: "deadline", timestamp: deadline.getTime() });
 
       // Map HARBORS to SSE format and select recommended (Kochi by default)
       const harbors = HARBORS.map(h => ({
@@ -134,6 +201,29 @@ Return ONLY valid JSON, no other text.`,
 
       await sleep(600);
       send({ type: "log", agent: "NEGOTIATOR", message: "Initiating multi-channel auction with premium buyers...", timestamp: getISTTime() });
+
+      // ✅ TELEGRAM AUCTION BROADCAST
+      try {
+        const auctionBroadcast = `🐟 *NEW AUCTION LIVE on Sampark-OS!*
+
+🎣 Species: ${species}
+⚖️ Weight: *${weightKg}kg* | Grade: *${qualityGrade}* (${qualityScore}%)
+💰 Market Price: ₹${Math.round((catch_analysis.quality_score || 80) * 4)}/kg
+⏰ Deadline: *3:30 PM IST*
+
+📱 Buyers: Reply "BID [amount]" to place your bid
+Example: \`BID 450\`
+
+⏱️ Auction closes in 7 minutes
+
+_Powered by Sampark-OS | Matsya Edition_`;
+
+        await broadcastTelegramChannel(auctionBroadcast);
+        send({ type: "log", agent: "NEGOTIATOR", message: "📢 Telegram auction broadcast sent to channel", timestamp: getISTTime() });
+      } catch (err: any) {
+        console.error('[TELEGRAM] Broadcast failed:', err);
+        send({ type: "log", agent: "NEGOTIATOR", message: "⚠️ Telegram broadcast failed (auction continues)", timestamp: getISTTime() });
+      }
 
       const tools: Anthropic.Tool[] = [
         {
@@ -252,10 +342,63 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
       const bidMap: Record<string, any> = {};
       let auctionComplete = false;
 
+      // Time-based Auditor: Check deadline and auto-trigger liquidation
+      const deadlineChecker = setInterval(() => {
+        const now = Date.now();
+        const timeLeft = deadline.getTime() - now;
+        const minutesLeft = Math.floor(timeLeft / 60000);
+
+        // Send urgency warnings
+        if (minutesLeft === 30 && !auctionComplete) {
+          send({
+            type: "log",
+            agent: "AUDITOR",
+            message: "⚠️ 30 minutes until cold storage deadline. No deal yet - liquidation mode may activate.",
+            timestamp: getISTTime(),
+          });
+        } else if (minutesLeft === 10 && !auctionComplete) {
+          send({
+            type: "log",
+            agent: "AUDITOR",
+            message: "🚨 URGENT: 10 minutes until deadline. Risk of ₹500/day cold storage penalty.",
+            timestamp: getISTTime(),
+          });
+        } else if (timeLeft <= 0 && !auctionComplete) {
+          // Deadline reached - force liquidation
+          send({
+            type: "log",
+            agent: "AUDITOR",
+            message: "❌ DEADLINE REACHED: No acceptable bids secured. Triggering emergency liquidation to prevent cold storage loss.",
+            timestamp: getISTTime(),
+          });
+
+          send({ type: "state", state: "LIQUIDATION" });
+
+          const liquidationPrice = Math.floor(qualityScore >= 80 ? 350 : 300);
+          const flashDeadline = new Date(Date.now() + 30 * 60 * 1000).toLocaleTimeString("en-IN", {
+            timeZone: "Asia/Kolkata",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          broadcastTelegramLiquidation(species, weightKg, liquidationPrice, flashDeadline).catch(console.error);
+
+          send({
+            type: "log",
+            agent: "NEGOTIATOR",
+            message: `Emergency flash sale broadcasted to Telegram: ₹${liquidationPrice}/kg, 30min deadline`,
+            timestamp: getISTTime(),
+          });
+
+          auctionComplete = true;
+          clearInterval(deadlineChecker);
+        }
+      }, 30000); // Check every 30 seconds
+
       for (let iteration = 0; iteration < 8 && !auctionComplete; iteration++) {
         try {
           const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-5-20250514",
+            model: "claude-opus-4-6",
             max_tokens: 8192,
             system: systemPrompt,
             tools,
@@ -358,6 +501,15 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
                   bidMap[toolInput.buyer_id] = { ...bid, buyer_id: toolInput.buyer_id };
                   send({ type: "bid", bid });
 
+                  // Send acknowledgment via WhatsApp or Telegram
+                  const ackMessage = `✅ Bid received: ₹${toolInput.amount_per_kg}/kg for ${weightKg}kg ${species}. Total: ₹${grossValue.toLocaleString("en-IN")}. We're evaluating your offer.`;
+                  if (toolInput.channel === "whatsapp") {
+                    // In production, this would use real buyer phone numbers
+                    console.log(`[WhatsApp] Would send to buyer ${toolInput.buyer_id}: ${ackMessage}`);
+                  } else {
+                    console.log(`[Telegram] Would send to buyer ${toolInput.buyer_id}: ${ackMessage}`);
+                  }
+
                   toolResult = {
                     bid_id: bidId,
                     buyer_id: toolInput.buyer_id,
@@ -382,6 +534,13 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
                       message: `Bid \u20B9${buyerData.bid_amount}/kg rejected. Counter: \u20B9${toolInput.counter_amount}/kg`,
                       timestamp: getISTTime(),
                     });
+
+                    // Send counter-offer via WhatsApp
+                    const counterMessage = `❌ Your bid of ₹${buyerData.bid_amount}/kg has been rejected.\n\n📊 Reason: ${toolInput.reason}\n\n💰 Counter-offer: ₹${toolInput.counter_amount}/kg\n\nReply "ACCEPT ${toolInput.counter_amount}" to proceed or "COUNTER [amount]" to negotiate.`;
+                    if (buyerData.channel === "whatsapp") {
+                      console.log(`[WhatsApp] Would send counter to buyer ${toolInput.buyer_id}: ${counterMessage}`);
+                      // await sendWhatsAppMessage(buyerData.phone, counterMessage);
+                    }
                   }
                   toolResult = {
                     buyer_id: toolInput.buyer_id,
@@ -401,11 +560,11 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
                       type: "bid_update",
                       bid_id: acceptedBuyer.id,
                       updates: {
-                        status: "ACCEPTED",
+                        status: "PROPOSED",
                         bid_amount: toolInput.final_amount,
                         gross_value: finalGross,
                         net_after_fuel: finalNet,
-                        agent_action: "ACCEPTED - Best net margin",
+                        agent_action: "PROPOSED - Awaiting approval",
                       },
                     });
 
@@ -420,24 +579,36 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
                       },
                     });
 
-                    send({ type: "state", state: "DEAL_SECURED" });
-                    send({ type: "countdown", seconds: 0 });
+                    send({ type: "state", state: "AWAITING_APPROVAL" });
+                    send({ type: "countdown", seconds: 120 });
                     send({ type: "threads", count: 0 });
+
+                    // Store pending deal for manual approval
+                    pendingDeal = {
+                      buyer_id: toolInput.buyer_id,
+                      buyer_name: acceptedBuyer.buyer_name,
+                      final_amount: toolInput.final_amount,
+                      proposed_at: Date.now(),
+                      timeout_seconds: 120,
+                    };
 
                     send({
                       type: "log",
                       agent: "AUDITOR",
-                      message: `Deal locked with ${acceptedBuyer.buyer_name} at \u20B9${toolInput.final_amount}/kg. Awaiting human confirmation.`,
+                      message: `💡 Deal proposed: ${acceptedBuyer.buyer_name} at \u20B9${toolInput.final_amount}/kg. Click APPROVE or wait 2min for auto-approval.`,
                       timestamp: getISTTime(),
                     });
+
+                    console.log(`[APPROVAL] Deal proposed with ${acceptedBuyer.buyer_name} at ₹${toolInput.final_amount}/kg. Awaiting approval (120s timeout)`);
                   }
 
                   toolResult = {
-                    deal_accepted: true,
+                    deal_proposed: true,
+                    awaiting_approval: true,
                     buyer_id: toolInput.buyer_id,
                     final_amount: toolInput.final_amount,
                   };
-                  auctionComplete = true;
+                  // DO NOT set auctionComplete - keep loop running for timeout
                   break;
                 }
 
@@ -449,6 +620,25 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
                     message: `LIQUIDATION MODE: ${toolInput.reason}`,
                     timestamp: getISTTime(),
                   });
+
+                  // Broadcast liquidation flash sale to Telegram channel
+                  const liquidationPrice = Math.floor(qualityScore >= 80 ? 350 : 300);
+                  const deadline = new Date(Date.now() + 30 * 60 * 1000).toLocaleTimeString("en-IN", {
+                    timeZone: "Asia/Kolkata",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  console.log(`[Telegram] Broadcasting liquidation: ${weightKg}kg ${species} @ ₹${liquidationPrice}/kg`);
+                  await broadcastTelegramLiquidation(species, weightKg, liquidationPrice, deadline);
+
+                  send({
+                    type: "log",
+                    agent: "NEGOTIATOR",
+                    message: `Flash sale broadcasted to Telegram: ₹${liquidationPrice}/kg, 30min deadline`,
+                    timestamp: getISTTime(),
+                  });
+
                   toolResult = { liquidation_triggered: true };
                   auctionComplete = true;
                   break;
@@ -493,8 +683,51 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
           send({ type: "log", agent: "AUDITOR", message: `System error: ${err.message}`, timestamp: getISTTime() });
           break;
         }
+
+        // Check for pending deal timeout (manual approval timeout)
+        if (pendingDeal && !auctionComplete) {
+          const elapsedSeconds = (Date.now() - pendingDeal.proposed_at) / 1000;
+          const remainingSeconds = Math.max(0, pendingDeal.timeout_seconds - elapsedSeconds);
+
+          // Update countdown every iteration
+          send({ type: "countdown", seconds: Math.floor(remainingSeconds) });
+
+          if (elapsedSeconds >= pendingDeal.timeout_seconds) {
+            // Timeout expired - auto-approve deal
+            send({ type: "log", agent: "SYSTEM", message: `⏰ Approval timeout expired. Auto-approving ${pendingDeal.buyer_name} at ₹${pendingDeal.final_amount}/kg`, timestamp: getISTTime() });
+
+            send({ type: "state", state: "DEAL_SECURED" });
+            send({ type: "countdown", seconds: 0 });
+
+            // Telegram notification
+            try {
+              const dealConfirmation = `✅ *DEAL AUTO-APPROVED — Sampark-OS*
+
+🏆 Winner: *${pendingDeal.buyer_name}*
+🐟 Species: ${species}
+⚖️ Weight: *${weightKg}kg* | Grade: *${qualityGrade}*
+💰 Final Price: *₹${pendingDeal.final_amount}/kg*
+📍 Pickup: *${recommended.name}*
+
+⏰ Auto-approved after timeout
+
+_Powered by Sampark-OS_`;
+
+              await broadcastTelegramChannel(dealConfirmation);
+              send({ type: "log", agent: "AUDITOR", message: "📢 Deal confirmation sent to Telegram", timestamp: getISTTime() });
+            } catch (err: any) {
+              console.error('[TELEGRAM] Deal confirmation failed:', err);
+            }
+
+            console.log(`[AUTO-APPROVAL] Timeout expired. Deal auto-approved: ${pendingDeal.buyer_name} at ₹${pendingDeal.final_amount}/kg`);
+
+            pendingDeal = null;
+            auctionComplete = true;
+          }
+        }
       }
 
+      clearInterval(deadlineChecker); // Clean up deadline checker
       send({ type: "log", agent: "NAVIGATOR", message: `Route confirmed: ${recommended.name}, ${recommended.distance_km}km, ETA ${recommended.eta_minutes}min`, timestamp: getISTTime() });
       res.write("data: [DONE]\n\n");
       res.end();
@@ -511,6 +744,10 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
 
   app.post("/api/approve-deal", async (req: Request, res: Response) => {
     try {
+      if (!pendingDeal) {
+        return res.status(400).json({ error: "No pending deal to approve" });
+      }
+
       const { gross_bid, net_profit, harbor } = req.body;
       const approval = {
         approved: true,
@@ -519,16 +756,111 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
         net_profit,
         harbor,
         approval_hash: "0x" + randomBytes(16).toString("hex"),
+        buyer_id: pendingDeal.buyer_id,
+        buyer_name: pendingDeal.buyer_name,
+        final_amount: pendingDeal.final_amount,
       };
 
       if (currentAuction) {
         currentAuction.approval = approval;
       }
 
+      // Broadcast approval to SSE clients
+      const approvalMessage = JSON.stringify({
+        type: "state",
+        state: "DEAL_SECURED",
+      }) + "\n\n";
+
+      const logMessage = JSON.stringify({
+        type: "log",
+        agent: "SYSTEM",
+        message: `✅ Deal manually approved by fisherman: ${pendingDeal.buyer_name} at ₹${pendingDeal.final_amount}/kg`,
+        timestamp: getISTTime(),
+      }) + "\n\n";
+
+      auctionSSEClients.forEach((client) => {
+        client.write(`data: ${approvalMessage}`);
+        client.write(`data: ${logMessage}`);
+      });
+
+      // Send Telegram notification
+      try {
+        const dealConfirmation = `✅ *DEAL APPROVED — Sampark-OS*
+
+🏆 Winner: *${pendingDeal.buyer_name}*
+💰 Final Price: *₹${pendingDeal.final_amount}/kg*
+💵 Gross: *₹${gross_bid.toLocaleString("en-IN")}*
+💚 Net Profit: *₹${net_profit.toLocaleString("en-IN")}*
+📍 Harbor: *${harbor}*
+
+👍 Manually approved by fisherman
+
+_Powered by Sampark-OS_`;
+
+        await broadcastTelegramChannel(dealConfirmation);
+        console.log(`[APPROVAL] Telegram notification sent`);
+      } catch (err: any) {
+        console.error('[TELEGRAM] Approval notification failed:', err);
+      }
+
+      console.log(`[APPROVAL] Fisherman approved deal with ${pendingDeal.buyer_name} at ₹${pendingDeal.final_amount}/kg`);
+
+      // Clear pending deal
+      pendingDeal = null;
+
       res.json(approval);
     } catch (error: any) {
       console.error("Approve deal error:", error);
       res.status(500).json({ error: error.message || "Failed to approve deal" });
+    }
+  });
+
+  // New endpoint for buyer UI bids
+  app.post("/api/place-bid", async (req: Request, res: Response) => {
+    try {
+      const { buyer_id, buyer_name, bid_amount } = req.body;
+
+      if (!buyer_id || !buyer_name || !bid_amount) {
+        return res.status(400).json({ error: "Missing required fields: buyer_id, buyer_name, bid_amount" });
+      }
+
+      const newBid = {
+        id: `bid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        buyer_name,
+        buyer_id,
+        bid_amount: parseInt(bid_amount, 10),
+        source: "HUMAN" as const,
+        channel: "ui" as const,
+        timestamp: getISTTime(),
+        status: "PENDING",
+      };
+
+      liveAuctionBids.push(newBid);
+
+      // Broadcast to SSE clients (fisherman dashboard)
+      const bidMessage = JSON.stringify({
+        type: "bid",
+        bid: newBid,
+      }) + "\n\n";
+
+      const logMessage = JSON.stringify({
+        type: "log",
+        agent: "HUMAN_BID",
+        message: `💰 ${buyer_name} bid ₹${bid_amount}/kg via buyer UI`,
+        timestamp: getISTTime(),
+      }) + "\n\n";
+
+      auctionSSEClients.forEach((client) => {
+        client.write(`data: ${bidMessage}`);
+        client.write(`data: ${logMessage}`);
+      });
+
+      console.log(`[BUYER BID] ${buyer_name} (${buyer_id}) placed bid: ₹${bid_amount}/kg via UI`);
+
+      res.json({ success: true, bid: newBid });
+    } catch (error: any) {
+      console.error("Place bid error:", error);
+      res.status(500).json({ error: error.message || "Failed to place bid" });
     }
   });
 
@@ -538,6 +870,183 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
       has_catch: !!currentAuction?.catch_analysis,
       approved: !!currentAuction?.approval,
     });
+  });
+
+  // WhatsApp Webhook (Twilio)
+  app.post("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
+    try {
+      const incoming = parseWhatsAppIncoming(req.body);
+      if (!incoming) {
+        return res.status(400).send("Invalid WhatsApp webhook");
+      }
+
+      console.log(`[WhatsApp Webhook] From ${incoming.from}: ${incoming.message}`);
+
+      // Parse bid message format: "BID 450" or "COUNTER 475"
+      const bidMatch = incoming.message.match(/BID\s+(\d+)/i);
+      const counterMatch = incoming.message.match(/COUNTER\s+(\d+)/i);
+
+      if (bidMatch) {
+        const amount = parseInt(bidMatch[1], 10);
+
+        const newBid = {
+          id: `bid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          buyer_name: incoming.buyerId ? `Buyer ${incoming.buyerId}` : "WhatsApp Buyer",
+          buyer_id: incoming.buyerId || incoming.from.slice(-4),
+          bid_amount: amount,
+          source: "HUMAN" as const,
+          channel: "whatsapp" as const,
+          timestamp: getISTTime(),
+          status: "PENDING",
+        };
+
+        liveAuctionBids.push(newBid);
+
+        // Broadcast via SSE
+        const bidMessage = JSON.stringify({
+          type: "bid",
+          bid: newBid,
+        }) + "\n\n";
+
+        const logMessage = JSON.stringify({
+          type: "log",
+          agent: "HUMAN_BID",
+          message: `💰 ${newBid.buyer_name} bid ₹${amount}/kg via WhatsApp`,
+          timestamp: getISTTime(),
+        }) + "\n\n";
+
+        auctionSSEClients.forEach((client) => {
+          client.write(`data: ${bidMessage}`);
+          client.write(`data: ${logMessage}`);
+        });
+
+        console.log(`[WhatsApp] New bid integrated: ₹${amount}/kg from ${incoming.from}`);
+      } else if (counterMatch) {
+        const amount = parseInt(counterMatch[1], 10);
+        console.log(`[WhatsApp] Counter-offer received: ₹${amount}/kg from ${incoming.from}`);
+        // TODO: Handle counter-offers
+      }
+
+      // Twilio expects empty 200 response
+      res.status(200).send("");
+    } catch (error: any) {
+      console.error("[WhatsApp Webhook] Error:", error);
+      res.status(500).send("Internal error");
+    }
+  });
+
+  // Telegram Webhook
+  app.post("/api/webhooks/telegram", async (req: Request, res: Response) => {
+    try {
+      const incoming = parseTelegramIncoming(req.body);
+      if (!incoming) {
+        return res.status(200).json({ ok: true });
+      }
+
+      console.log(`[Telegram Webhook] From ${incoming.username || incoming.chatId}: ${incoming.message}`);
+
+      // Parse liquidation purchase: "BUY"
+      if (incoming.message.toUpperCase() === "BUY") {
+        console.log(`[Telegram] Liquidation purchase request from ${incoming.username || incoming.chatId}`);
+        await sendTelegramMessage(
+          incoming.chatId,
+          "✅ Purchase request received! Fisherman will contact you shortly."
+        );
+        // TODO: Notify fisherman
+      }
+
+      res.status(200).json({ ok: true });
+    } catch (error: any) {
+      console.error("[Telegram Webhook] Error:", error);
+      res.status(500).json({ ok: false });
+    }
+  });
+
+  // SMS Webhook (Twilio) for offline sync
+  app.post("/api/webhooks/sms", async (req: Request, res: Response) => {
+    try {
+      const from = req.body.From || "";
+      const body = req.body.Body || "";
+
+      console.log(`[SMS Webhook] From ${from}: ${body}`);
+
+      // Parse compressed state format: AUC:KAR:40:GR_A
+      const stateMatch = body.match(/AUC:([A-Z]+):(\d+):GR_([A-C])/);
+      if (stateMatch) {
+        const [_, species, weight, grade] = stateMatch;
+        console.log(`[SMS] Auction request: ${species} ${weight}kg Grade ${grade}`);
+        // TODO: Trigger auction from SMS
+        await sendSMS(from, `Auction starting for ${species} ${weight}kg. Will notify via SMS.`);
+      }
+
+      res.status(200).send("");
+    } catch (error: any) {
+      console.error("[SMS Webhook] Error:", error);
+      res.status(500).send("Internal error");
+    }
+  });
+
+  // Voice Transcription (Sarvam AI)
+  app.post("/api/voice/transcribe", async (req: Request, res: Response) => {
+    try {
+      const { audio, language = "ml-IN" } = req.body;
+      if (!audio) {
+        return res.status(400).json({ error: "No audio data provided" });
+      }
+
+      const result = await transcribeVoice(audio, language as any);
+      const command = parseVoiceCommand(result.text);
+
+      res.json({
+        text: result.text,
+        textEnglish: result.textEnglish,
+        language: result.language,
+        confidence: result.confidence,
+        command,
+      });
+    } catch (error: any) {
+      console.error("[Voice API] Transcription error:", error);
+      res.status(500).json({ error: error.message || "Failed to transcribe voice" });
+    }
+  });
+
+  // Voice Synthesis (Sarvam AI)
+  app.post("/api/voice/synthesize", async (req: Request, res: Response) => {
+    try {
+      const { text, language = "ml-IN", voice = "male" } = req.body;
+      if (!text) {
+        return res.status(400).json({ error: "No text provided" });
+      }
+
+      const audioBase64 = await synthesizeVoice(text, language as any, voice as any);
+
+      res.json({
+        audio: audioBase64,
+        language,
+      });
+    } catch (error: any) {
+      console.error("[Voice API] Synthesis error:", error);
+      res.status(500).json({ error: error.message || "Failed to synthesize voice" });
+    }
+  });
+
+  // Voice Deal Confirmation (shortcut for common response)
+  app.post("/api/voice/deal-confirmation", async (req: Request, res: Response) => {
+    try {
+      const { net_profit, buyer_name, language = "ml-IN" } = req.body;
+
+      const malayalamText = generateMalayalamResponse(net_profit, buyer_name);
+      const audioBase64 = await synthesizeVoice(malayalamText, language as any);
+
+      res.json({
+        text: malayalamText,
+        audio: audioBase64,
+        language,
+      });
+    } catch (error: any) {
+      console.error("[Voice API] Deal confirmation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate confirmation" });
+    }
   });
 
   return httpServer;

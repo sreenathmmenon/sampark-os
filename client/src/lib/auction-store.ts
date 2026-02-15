@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
 import { type AuctionData, type Bid, type LogEntry, type CatchAnalysis, type AuctionState, type HarborOption, INITIAL_AUCTION_DATA } from "./types";
 
+export type ViewMode = "fisherman" | "buyer";
+
 let globalState: AuctionData = { ...INITIAL_AUCTION_DATA };
+let viewMode: ViewMode = "fisherman";
 let listeners: Set<() => void> = new Set();
+let viewModeListeners: Set<() => void> = new Set();
 
 function notify() {
   listeners.forEach((l) => l());
@@ -70,6 +74,11 @@ export function setDealApproved(approved: boolean) {
   notify();
 }
 
+export function setDeadline(timestamp: number | null) {
+  globalState = { ...globalState, deadline_timestamp: timestamp };
+  notify();
+}
+
 export function useAuctionSubscription(): AuctionData {
   const [state, setState] = useState<AuctionData>({ ...globalState });
 
@@ -80,4 +89,30 @@ export function useAuctionSubscription(): AuctionData {
   }, []);
 
   return state;
+}
+
+// View mode management
+function notifyViewMode() {
+  viewModeListeners.forEach((l) => l());
+}
+
+export function getViewMode(): ViewMode {
+  return viewMode;
+}
+
+export function setViewMode(mode: ViewMode) {
+  viewMode = mode;
+  notifyViewMode();
+}
+
+export function useViewMode(): ViewMode {
+  const [mode, setMode] = useState<ViewMode>(viewMode);
+
+  useEffect(() => {
+    const cb = () => setMode(viewMode);
+    viewModeListeners.add(cb);
+    return () => { viewModeListeners.delete(cb); };
+  }, []);
+
+  return mode;
 }

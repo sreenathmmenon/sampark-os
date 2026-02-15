@@ -13,7 +13,7 @@ interface ApproveButtonProps {
 }
 
 export function ApproveButton({ state, netProfit, grossBid, fuelCost, recommendedHarbor, onApprove, isApproving, isApproved }: ApproveButtonProps) {
-  const canApprove = state === "DEAL_SECURED" && !isApproved;
+  const canApprove = (state === "DEAL_SECURED" || state === "AWAITING_APPROVAL") && !isApproved;
 
   return (
     <div className="space-y-3">
