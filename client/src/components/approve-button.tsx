@@ -30,12 +30,13 @@ export function ApproveButton({ state, netProfit, grossBid, fuelCost, recommende
       <button
         onClick={onApprove}
         disabled={!canApprove || isApproving}
-        className="w-full flex items-center justify-center gap-2 font-semibold text-base tracking-wide rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full flex items-center justify-center gap-2 font-semibold text-base tracking-wide rounded-xl transition-all disabled:cursor-not-allowed"
         style={{
           minHeight: 56,
           backgroundColor: isApproved ? "#00ff8830" : canApprove ? "#00ff88" : "#334155",
-          color: isApproved ? "#00ff88" : canApprove ? "#0a0f1a" : "#64748b",
+          color: isApproved ? "#00ff88" : canApprove ? "#0a0f1a" : "#94a3b8",
           boxShadow: canApprove ? "0 0 25px rgba(0,255,136,0.3)" : "none",
+          opacity: !canApprove && !isApproved ? 0.7 : 1,
         }}
         data-testid="button-approve"
       >

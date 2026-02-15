@@ -725,6 +725,12 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
             send({ type: "state", state: "DEAL_SECURED" });
             send({ type: "countdown", seconds: 0 });
 
+            // Calculate economics for auto-approval
+            const autoGrossBid = pendingDeal.final_amount * weightKg;
+            const autoFuelCost = fuelCost || 795;
+            const autoRiskBuffer = Math.round(autoGrossBid * 0.03);
+            const autoNetProfit = autoGrossBid - autoFuelCost - autoRiskBuffer;
+
             // Telegram notification
             try {
               const dealConfirmation = `✅ *DEAL AUTO-APPROVED — Sampark-OS*
@@ -733,7 +739,9 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
 🐟 Species: ${species}
 ⚖️ Weight: *${weightKg}kg* | Grade: *${qualityGrade}*
 💰 Final Price: *₹${pendingDeal.final_amount}/kg*
-📍 Pickup: *${recommended.name}*
+💵 Gross Revenue: *₹${autoGrossBid.toLocaleString("en-IN")}*
+💚 Net Profit: *₹${autoNetProfit.toLocaleString("en-IN")}*
+📍 Harbor: *${recommended.name}*
 
 ⏰ Auto-approved after timeout
 
@@ -811,11 +819,17 @@ _Powered by Sampark-OS_`;
 
       // Send Telegram notification
       try {
-        const dealConfirmation = `✅ *DEAL APPROVED — Sampark-OS*
+        const species = currentAuction?.catch_analysis?.species || "Unknown";
+        const weightKg = currentAuction?.catch_analysis?.weight_kg || 0;
+        const qualityGrade = currentAuction?.catch_analysis?.quality_grade || "N/A";
+
+        const dealConfirmation = `✅ *DEAL MANUALLY APPROVED — Sampark-OS*
 
 🏆 Winner: *${pendingDeal.buyer_name}*
+🐟 Species: ${species}
+⚖️ Weight: *${weightKg}kg* | Grade: *${qualityGrade}*
 💰 Final Price: *₹${pendingDeal.final_amount}/kg*
-💵 Gross: *₹${gross_bid.toLocaleString("en-IN")}*
+💵 Gross Revenue: *₹${gross_bid.toLocaleString("en-IN")}*
 💚 Net Profit: *₹${net_profit.toLocaleString("en-IN")}*
 📍 Harbor: *${harbor}*
 

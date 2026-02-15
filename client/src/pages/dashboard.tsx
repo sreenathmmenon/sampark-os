@@ -191,13 +191,18 @@ export default function Dashboard() {
     setIsApproving(true);
     try {
       await apiRequest("POST", "/api/approve-deal", {
-        gross_bid: auction.gross_bid,
-        net_profit: auction.net_profit,
-        harbor: auction.recommended_harbor?.name,
+        gross_bid: auction.gross_bid || 0,
+        net_profit: auction.net_profit || 0,
+        harbor: auction.recommended_harbor?.name || "N/A",
       });
       setDealApproved(true);
+
+      // Show success alert
+      const netProfit = auction.net_profit || 0;
+      alert("✅ Deal Approved!\n\nNet Profit: ₹" + netProfit.toLocaleString("en-IN") + "\nTelegram notification sent to all stakeholders.");
     } catch (err: any) {
       setAnalysisError("Failed to approve deal: " + (err.message || "Unknown error"));
+      alert("❌ Failed to approve deal: " + (err.message || "Unknown error"));
     } finally {
       setIsApproving(false);
     }
