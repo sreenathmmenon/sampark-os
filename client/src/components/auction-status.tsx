@@ -15,7 +15,7 @@ const STATE_CONFIG: Record<AuctionState, { label: string; color: string; pulse: 
 };
 
 export function AuctionStatus({ state, countdown }: AuctionStatusProps) {
-  const config = STATE_CONFIG[state];
+  const config = STATE_CONFIG[state] || { label: "PROCESSING", color: "#94a3b8", pulse: false };
   const minutes = Math.floor(countdown / 60);
   const seconds = countdown % 60;
 

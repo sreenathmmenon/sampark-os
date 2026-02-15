@@ -254,6 +254,37 @@ export default function Dashboard() {
     }
   }, [viewMode]);
 
+  // Also poll auction state for fisherman view to catch AWAITING_APPROVAL
+  useEffect(() => {
+    if (viewMode === "fisherman" && auction.catch_analysis && auction.state === "AUCTION_LIVE") {
+      const pollState = () => {
+        fetch("/api/current-auction")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.state && data.state !== auction.state) {
+              setAuctionState(data.state);
+            }
+            if (data.pending_deal) {
+              // Update economics if deal is pending
+              const finalGross = data.pending_deal.final_amount * auction.catch_analysis.weight_kg;
+              const fuelCost = auction.fuel_cost || 795;
+              const riskBuffer = Math.round(finalGross * 0.03);
+              setEconomics({
+                gross_bid: finalGross,
+                fuel_cost: fuelCost,
+                risk_buffer: riskBuffer,
+                net_profit: finalGross - fuelCost - riskBuffer,
+              });
+            }
+          })
+          .catch(() => {});
+      };
+
+      const interval = setInterval(pollState, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [viewMode, auction.catch_analysis, auction.state, auction.fuel_cost]);
+
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-[#e2e8f0]">
       <div className="max-w-[1920px] mx-auto">

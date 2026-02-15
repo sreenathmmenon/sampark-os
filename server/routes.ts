@@ -143,6 +143,9 @@ Return ONLY valid JSON, no other text.`,
         return res.status(400).json({ error: "No catch analysis provided" });
       }
 
+      // Clear old bids from previous auctions
+      liveAuctionBids = [];
+
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
@@ -602,6 +605,9 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
                     send({ type: "state", state: "AWAITING_APPROVAL" });
                     send({ type: "countdown", seconds: 120 });
                     send({ type: "threads", count: 0 });
+
+                    // Update currentAuction state for polling
+                    currentAuction = { ...currentAuction, state: "AWAITING_APPROVAL" };
 
                     // Store pending deal for manual approval
                     pendingDeal = {
