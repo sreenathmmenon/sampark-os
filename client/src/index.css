@@ -179,6 +179,11 @@
   100% { transform: scale(1); }
 }
 
+@keyframes countdown-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.9; }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

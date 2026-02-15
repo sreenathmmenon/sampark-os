@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type LogEntry, type AgentType } from "@/lib/types";
 import { Terminal } from "lucide-react";
 
@@ -55,13 +55,32 @@ export function TransparencyTerminal({ entries, isLoading }: TransparencyTermina
 function LogLine({ entry }: { entry: LogEntry }) {
   const agentColor = AGENT_COLORS[entry.agent];
   const isToolCall = entry.message.includes("Tool Call:");
+  const [visibleText, setVisibleText] = useState("");
+  const fullText = entry.message;
+
+  useEffect(() => {
+    let charIndex = 0;
+    const interval = setInterval(() => {
+      if (charIndex <= fullText.length) {
+        setVisibleText(fullText.slice(0, charIndex));
+        charIndex++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 30); // 30ms per character for typewriter effect
+
+    return () => clearInterval(interval);
+  }, [fullText]);
 
   return (
     <div className="animate-flash-in rounded px-1 py-0.5" data-testid={`log-${entry.id}`}>
       <span className="text-[#475569]">[{entry.timestamp}]</span>{" "}
       <span style={{ color: agentColor }}>[{entry.agent}]</span>{" "}
       <span className={isToolCall ? "text-[#94a3b8] italic" : "text-[#cbd5e1]"}>
-        {entry.message}
+        {visibleText}
+        {visibleText.length < fullText.length && (
+          <span className="inline-block w-1 h-4 ml-0.5 bg-[#00ff88] animate-terminal-blink" />
+        )}
       </span>
     </div>
   );

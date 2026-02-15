@@ -45,7 +45,17 @@ export function AuctionStatus({ state, countdown }: AuctionStatusProps) {
         </span>
       </div>
       {state === "AUCTION_LIVE" && countdown > 0 && (
-        <span className="text-sm font-mono text-[#e2e8f0]" data-testid="text-countdown">
+        <span
+          className={`font-mono font-bold ${countdown < 120 ? 'text-2xl' : 'text-xl'}`}
+          style={{
+            color: countdown < 120 ? '#ffb800' : '#e2e8f0',
+            textShadow: countdown < 120
+              ? '0 0 20px rgba(255, 184, 0, 0.6), 0 0 10px rgba(255, 184, 0, 0.4)'
+              : 'none',
+            animation: countdown < 120 ? 'countdown-pulse 1s ease-in-out infinite' : 'none',
+          }}
+          data-testid="text-countdown"
+        >
           {minutes}:{seconds.toString().padStart(2, "0")} remaining
         </span>
       )}

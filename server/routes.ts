@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import Anthropic from "@anthropic-ai/sdk";
 import { randomBytes } from "crypto";
+import { HARBORS, BUYERS, findFishByName } from "../shared/marketData";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -116,14 +117,16 @@ Return ONLY valid JSON, no other text.`,
       send({ type: "threads", count: 5 });
       send({ type: "countdown", seconds: 420 });
 
-      const harbors = [
-        { name: "Kochi Harbor", distance_km: 12, fuel_cost: 2100, eta_minutes: 45 },
-        { name: "Alappuzha Port", distance_km: 28, fuel_cost: 4800, eta_minutes: 90 },
-        { name: "Munambam Dock", distance_km: 18, fuel_cost: 3200, eta_minutes: 60 },
-      ];
-      const recommended = harbors[0];
+      // Map HARBORS to SSE format and select recommended (Kochi by default)
+      const harbors = HARBORS.map(h => ({
+        name: h.name,
+        distance_km: h.distanceFromKadamakudy_km,
+        fuel_cost: h.fuelCostOneWay,
+        eta_minutes: h.transitTime_min,
+      }));
+      const recommended = harbors[0]; // Kochi Fishing Harbor (very_high buyer density)
 
-      send({ type: "log", agent: "NAVIGATOR", message: "Calculating fuel ROI for 3 harbors...", timestamp: getISTTime() });
+      send({ type: "log", agent: "NAVIGATOR", message: `Calculating fuel ROI for ${HARBORS.length} harbors...`, timestamp: getISTTime() });
 
       await sleep(800);
       send({ type: "harbors", harbors, recommended });
@@ -217,15 +220,23 @@ Return ONLY valid JSON, no other text.`,
 Current catch: ${species}, ${weightKg}kg, Grade ${qualityGrade} (${qualityScore}%)
 Harbor: ${recommended.name} (${recommended.distance_km}km, fuel \u20B9${recommended.fuel_cost})
 
-SCENARIO: You have 5 buyers interested. Simulate a realistic auction where:
+SCENARIO: You have 5+ buyers interested from the Kerala network:
+- KFE (Kochi Fresh Exports) - WhatsApp - Gulf export specialist
+- MWS (Marina Wholesale Seafood) - WhatsApp - Premium hotel supply
+- GGE (Gulf Gate Exports) - WhatsApp - Air-freight Dubai/Saudi
+- PKF (Paravur Kadal Foods) - WhatsApp - Fish processing
+- HKC (Hotel Kerala Cafe Chain) - Telegram - Restaurant chain
+- SCM (Saravana Canteen & Mess) - Telegram - Bulk hostel supply
+- VFS (Vypeen Fresh Stall) - Telegram - Local retail
+
+Simulate a realistic auction where:
 1. First check the mandi/market price for this species
-2. Receive bids from at least 4 buyers via WhatsApp and Telegram
+2. Receive bids from at least 4-5 buyers via WhatsApp and Telegram
 3. Reject at least one low bid with a counter-offer
 4. Evaluate each bid against the market price, deducting fuel costs
 5. Accept the best deal that maximizes net profit for the fisherman
 
 Use the tools provided to execute each step. Think through your reasoning carefully.
-Price range should be realistic for Indian fish markets (roughly \u20B9350-500/kg for premium species).
 Always prioritize the fisherman's net profit after fuel deduction.`;
 
       await sleep(1000);
@@ -286,19 +297,24 @@ Always prioritize the fisherman's net profit after fuel deduction.`;
 
               switch (toolName) {
                 case "check_mandi_price": {
-                  const basePrice = qualityScore >= 90 ? 440 : qualityScore >= 75 ? 400 : 350;
+                  // Use real wholesale prices from market data
+                  const fish = findFishByName(toolInput.species || species);
+                  const basePrice = fish ? fish.wholesalePrice : (qualityScore >= 90 ? 440 : qualityScore >= 75 ? 400 : 350);
+                  const minPrice = fish ? fish.farmgatePrice : basePrice - 40;
+                  const maxPrice = fish ? fish.retailPrice : basePrice + 60;
+
                   toolResult = {
                     species: toolInput.species,
                     region: toolInput.region || "Kerala",
                     average_price_per_kg: basePrice,
-                    min_price: basePrice - 40,
-                    max_price: basePrice + 60,
+                    min_price: minPrice,
+                    max_price: maxPrice,
                     last_updated: new Date().toISOString(),
                   };
                   send({
                     type: "log",
                     agent: "AUDITOR",
-                    message: `MCP average for ${species}: \u20B9${basePrice}/kg (range \u20B9${basePrice - 40}-\u20B9${basePrice + 60})`,
+                    message: `MCP average for ${species}: ₹${basePrice}/kg (range ₹${minPrice}-₹${maxPrice})`,
                     timestamp: getISTTime(),
                   });
                   break;

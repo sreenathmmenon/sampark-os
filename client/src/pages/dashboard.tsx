@@ -275,6 +275,8 @@ export default function Dashboard() {
                     netProfit={auction.net_profit}
                     recommendedHarbor={auction.recommended_harbor}
                     isLoading={false}
+                    species={auction.catch_analysis?.species}
+                    weight_kg={auction.catch_analysis?.weight_kg}
                   />
                 </div>
                 <div className="w-full lg:w-auto lg:min-w-[220px]">

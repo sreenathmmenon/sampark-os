@@ -46,7 +46,7 @@ export function BidTable({ bids, isLoading }: BidTableProps) {
           </tr>
         </thead>
         <tbody>
-          {bids.map((bid) => {
+          {bids.map((bid, index) => {
             const isHighest = highestBid?.id === bid.id;
             const isRejected = bid.status === "REJECTED";
             const statusStyle = STATUS_COLORS[bid.status] ?? STATUS_COLORS.ACTIVE;
@@ -60,6 +60,7 @@ export function BidTable({ bids, isLoading }: BidTableProps) {
                   borderLeft: isHighest ? "3px solid #00ff88" : "3px solid transparent",
                   opacity: isRejected ? 0.55 : 1,
                   boxShadow: isHighest ? "inset 3px 0 12px rgba(0,255,136,0.08)" : "none",
+                  animationDelay: `${index * 150}ms`,
                 }}
                 data-testid={`row-bid-${bid.id}`}
               >
