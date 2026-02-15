@@ -10,6 +10,7 @@ import { EconomicsBar } from "@/components/economics-bar";
 import { ApproveButton } from "@/components/approve-button";
 import { QualityCertificate } from "@/components/quality-certificate";
 import { LogisticsCalculator } from "@/components/logistics-calculator";
+import { ColdStorageCalculator } from "@/components/cold-storage-calculator";
 import { NegotiationTimeline } from "@/components/negotiation-timeline";
 import { FloatingActions } from "@/components/floating-actions";
 import { BuyerHeader } from "@/components/buyer-header";
@@ -216,6 +217,43 @@ export default function Dashboard() {
   const rejectedCount = auction.bids.filter((b) => b.status === "REJECTED").length;
   const counterCount = auction.bids.filter((b) => b.status === "COUNTERED").length;
 
+  // Fetch human bids when viewing fisherman page
+  useEffect(() => {
+    if (viewMode === "fisherman" && auction.catch_analysis) {
+      fetch("/api/current-bids")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.bids && data.bids.length > 0) {
+            data.bids.forEach((bid: any) => addBid(bid));
+          }
+        })
+        .catch((err) => console.error("Failed to fetch bids:", err));
+    }
+  }, [viewMode, auction.catch_analysis]);
+
+  // Fetch auction state for buyer view (poll every 3 seconds)
+  useEffect(() => {
+    if (viewMode === "buyer") {
+      const fetchAuction = () => {
+        fetch("/api/current-auction")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.catch_analysis) {
+              setCatchAnalysis(data.catch_analysis);
+              if (data.bids) {
+                data.bids.forEach((bid: any) => addBid(bid));
+              }
+            }
+          })
+          .catch((err) => console.error("Failed to fetch auction:", err));
+      };
+
+      fetchAuction();
+      const interval = setInterval(fetchAuction, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [viewMode]);
+
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-[#e2e8f0]">
       <div className="max-w-[1920px] mx-auto">
@@ -263,6 +301,7 @@ export default function Dashboard() {
             />
             <QualityCertificate analysis={auction.catch_analysis} isLoading={isAnalyzing} />
             <LogisticsCalculator harbors={auction.harbors} recommendedHarbor={auction.recommended_harbor} isLoading={false} />
+            <ColdStorageCalculator analysis={auction.catch_analysis} isLoading={isAnalyzing} />
           </div>
 
           <div className="col-span-6 overflow-y-auto min-h-0 flex flex-col gap-3">
@@ -311,9 +350,9 @@ export default function Dashboard() {
           </div>
 
           <div className="col-span-12">
-            <div className="rounded-xl bg-[#1e293b]/60 backdrop-blur-sm border border-[#334155]/50 p-4">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex-1 min-w-[300px]">
+            <div className="rounded-xl bg-[#1e293b]/60 backdrop-blur-sm border border-[#334155]/50 p-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex-1 min-w-[280px]">
                   <EconomicsBar
                     grossBid={auction.gross_bid}
                     fuelCost={auction.fuel_cost}

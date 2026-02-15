@@ -32,6 +32,10 @@ export function setCatchAnalysis(analysis: CatchAnalysis) {
 }
 
 export function addBid(bid: Bid) {
+  // Prevent duplicate bids
+  if (globalState.bids.some((b) => b.id === bid.id)) {
+    return;
+  }
   globalState = { ...globalState, bids: [...globalState.bids, bid] };
   notify();
 }

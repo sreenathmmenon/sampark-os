@@ -166,6 +166,14 @@ Return ONLY valid JSON, no other text.`,
 
       console.log(`[SSE] Client connected. Active clients: ${auctionSSEClients.length}`);
 
+      // ✅ SEND ALL EXISTING HUMAN BIDS IMMEDIATELY
+      if (liveAuctionBids.length > 0) {
+        console.log(`[SSE] Sending ${liveAuctionBids.length} existing human bids to new client`);
+        liveAuctionBids.forEach((bid) => {
+          send({ type: "bid", bid });
+        });
+      }
+
       const species = catch_analysis.species_local || catch_analysis.species;
       const weightKg = catch_analysis.weight_kg || 30;
       const qualityGrade = catch_analysis.quality_grade || "B";
@@ -223,6 +231,16 @@ _Powered by Sampark-OS | Matsya Edition_`;
       } catch (err: any) {
         console.error('[TELEGRAM] Broadcast failed:', err);
         send({ type: "log", agent: "NEGOTIATOR", message: "⚠️ Telegram broadcast failed (auction continues)", timestamp: getISTTime() });
+      }
+
+      // ✅ SEND EXISTING HUMAN BIDS (if any were placed before auction started)
+      if (liveAuctionBids.length > 0) {
+        send({ type: "log", agent: "SYSTEM", message: `📥 Loading ${liveAuctionBids.length} human bid(s) placed earlier`, timestamp: getISTTime() });
+        liveAuctionBids.forEach((bid) => {
+          send({ type: "bid", bid });
+          bidCounter++;
+          bidMap[bid.buyer_id] = bid;
+        });
       }
 
       const tools: Anthropic.Tool[] = [
@@ -815,6 +833,33 @@ _Powered by Sampark-OS_`;
     }
   });
 
+  // Get current auction state (for buyers in separate browser)
+  app.get("/api/current-auction", async (req: Request, res: Response) => {
+    try {
+      res.json({
+        catch_analysis: currentAuction?.catch_analysis || null,
+        bids: liveAuctionBids,
+        state: currentAuction?.state || "IDLE",
+        pending_deal: pendingDeal,
+      });
+    } catch (error: any) {
+      console.error("Get auction error:", error);
+      res.status(500).json({ error: error.message || "Failed to get auction" });
+    }
+  });
+
+  // Get all bids for current auction (AI + human)
+  app.get("/api/current-bids", async (req: Request, res: Response) => {
+    try {
+      // Merge AI bids from current auction with human bids
+      const allBids = [...liveAuctionBids];
+      res.json({ bids: allBids });
+    } catch (error: any) {
+      console.error("Get bids error:", error);
+      res.status(500).json({ error: error.message || "Failed to get bids" });
+    }
+  });
+
   // New endpoint for buyer UI bids
   app.post("/api/place-bid", async (req: Request, res: Response) => {
     try {
@@ -824,15 +869,22 @@ _Powered by Sampark-OS_`;
         return res.status(400).json({ error: "Missing required fields: buyer_id, buyer_name, bid_amount" });
       }
 
+      const amount = parseInt(bid_amount, 10);
+      const weight = currentAuction?.catch_analysis?.weight_kg || 30;
+      const fuelCost = 795;
+
       const newBid = {
         id: `bid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         buyer_name,
         buyer_id,
-        bid_amount: parseInt(bid_amount, 10),
+        channel: "whatsapp" as const,
+        bid_amount: amount,
+        gross_value: amount * weight,
+        net_after_fuel: (amount * weight) - fuelCost,
+        agent_action: "🙋 HUMAN BID via UI",
         source: "HUMAN" as const,
-        channel: "ui" as const,
         timestamp: getISTTime(),
-        status: "PENDING",
+        status: "ACTIVE" as const,
       };
 
       liveAuctionBids.push(newBid);

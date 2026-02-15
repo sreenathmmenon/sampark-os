@@ -9,6 +9,7 @@ const STATE_CONFIG: Record<AuctionState, { label: string; color: string; pulse: 
   IDLE: { label: "IDLE", color: "#94a3b8", pulse: false },
   SCANNING: { label: "SCANNING CATCH", color: "#ffb800", pulse: true },
   AUCTION_LIVE: { label: "AUCTION LIVE", color: "#00ff88", pulse: true },
+  AWAITING_APPROVAL: { label: "AWAITING APPROVAL", color: "#ffb800", pulse: true },
   DEAL_SECURED: { label: "DEAL SECURED", color: "#00ff88", pulse: false },
   LIQUIDATION: { label: "LIQUIDATION MODE", color: "#ff3b5c", pulse: true },
 };

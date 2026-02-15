@@ -41,7 +41,6 @@ export function BidTable({ bids, isLoading }: BidTableProps) {
             <th className="pb-2.5 px-3">BID ({"\u20B9"}/kg)</th>
             <th className="pb-2.5 px-3">GROSS</th>
             <th className="pb-2.5 px-3">NET</th>
-            <th className="pb-2.5 px-3">ACTION</th>
             <th className="pb-2.5 px-3">STATUS</th>
           </tr>
         </thead>
@@ -95,9 +94,6 @@ export function BidTable({ bids, isLoading }: BidTableProps) {
                 <td className="py-3 px-3 font-mono text-[#94a3b8]">
                   {"\u20B9"}{bid.net_after_fuel.toLocaleString("en-IN")}
                 </td>
-                <td className="py-3 px-3 text-xs text-[#94a3b8] max-w-[140px] truncate">
-                  {bid.agent_action}
-                </td>
                 <td className="py-3 px-3">
                   <Badge
                     className="no-default-hover-elevate no-default-active-elevate text-[10px] font-mono tracking-wider px-2 py-0.5 border-0"
@@ -125,7 +121,6 @@ function BidTableSkeleton() {
           <div className="h-4 w-16 bg-[#334155]/40 rounded animate-pulse" />
           <div className="h-4 w-20 bg-[#334155]/40 rounded animate-pulse" />
           <div className="h-4 w-20 bg-[#334155]/40 rounded animate-pulse" />
-          <div className="h-4 w-24 bg-[#334155]/40 rounded animate-pulse" />
           <div className="h-4 w-16 bg-[#334155]/40 rounded animate-pulse" />
         </div>
       ))}
